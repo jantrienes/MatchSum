@@ -19,7 +19,7 @@ from transformers import BertTokenizer, RobertaTokenizer
 
 MAX_LEN = 512
 
-_ROUGE_PATH = '/path/to/RELEASE-1.5.5'
+_ROUGE_PATH = os.environ['ROUGE_PATH']
 temp_path = './temp' # path to store some temporary files
 
 original_data, sent_ids = [], []
@@ -69,17 +69,17 @@ def get_rouge(path, dec):
 def get_candidates(tokenizer, cls, sep_id, idx):
 
     idx_path = join(temp_path, str(idx))
-    
+
     # create some temporary files to calculate ROUGE
     sp.call('mkdir ' + idx_path, shell=True)
     sp.call('mkdir ' + join(idx_path, 'decode'), shell=True)
     sp.call('mkdir ' + join(idx_path, 'reference'), shell=True)
-    
+
     # load data
     data = {}
     data['text'] = original_data[idx]['text']
     data['summary'] = original_data[idx]['summary']
-    
+
     # write reference summary to temporary files
     ref_dir = join(idx_path, 'reference')
     with open(join(ref_dir, '0.ref'), 'w') as f:
@@ -87,7 +87,7 @@ def get_candidates(tokenizer, cls, sep_id, idx):
             print(sentence, file=f)
 
     # get candidate summaries
-    # here is for CNN/DM: truncate each document into the 5 most important sentences (using BertExt), 
+    # here is for CNN/DM: truncate each document into the 5 most important sentences (using BertExt),
     # then select any 2 or 3 sentences to form a candidate summary, so there are C(5,2)+C(5,3)=20 candidate summaries.
     # if you want to process other datasets, you may need to adjust these numbers according to specific situation.
     sent_id = sent_ids[idx]['sent_id'][:5]
@@ -95,7 +95,7 @@ def get_candidates(tokenizer, cls, sep_id, idx):
     indices += list(combinations(sent_id, 3))
     if len(sent_id) < 2:
         indices = [sent_id]
-    
+
     # get ROUGE score for each candidate summary and sort them in descending order
     score = []
     for i in indices:
@@ -108,7 +108,7 @@ def get_candidates(tokenizer, cls, sep_id, idx):
             dec.append(sent)
         score.append((i, get_rouge(idx_path, dec)))
     score.sort(key=lambda x : x[1], reverse=True)
-    
+
     # write candidate indices and score
     data['ext_idx'] = sent_id
     data['indices'] = []
@@ -126,13 +126,13 @@ def get_candidates(tokenizer, cls, sep_id, idx):
         cur_summary = cur_summary[:MAX_LEN]
         cur_summary = ' '.join(cur_summary)
         candidate_summary.append(cur_summary)
-    
+
     data['candidate_id'] = []
     for summary in candidate_summary:
         token_ids = tokenizer.encode(summary, add_special_tokens=False)[:(MAX_LEN - 1)]
         token_ids += sep_id
         data['candidate_id'].append(token_ids)
-    
+
     # tokenize and get text_id
     text = [cls]
     for sent in data['text']:
@@ -142,7 +142,7 @@ def get_candidates(tokenizer, cls, sep_id, idx):
     token_ids = tokenizer.encode(text, add_special_tokens=False)[:(MAX_LEN - 1)]
     token_ids += sep_id
     data['text_id'] = token_ids
-    
+
     # tokenize and get summary_id
     summary = [cls]
     for sent in data['summary']:
@@ -152,16 +152,16 @@ def get_candidates(tokenizer, cls, sep_id, idx):
     token_ids = tokenizer.encode(summary, add_special_tokens=False)[:(MAX_LEN - 1)]
     token_ids += sep_id
     data['summary_id'] = token_ids
-    
+
     # write processed data to temporary file
     processed_path = join(temp_path, 'processed')
     with open(join(processed_path, '{}.json'.format(idx)), 'w') as f:
-        json.dump(data, f, indent=4) 
-    
+        json.dump(data, f, indent=4)
+
     sp.call('rm -r ' + idx_path, shell=True)
 
 def get_candidates_mp(args):
-    
+
     # choose tokenizer
     if args.tokenizer == 'bert':
         tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -185,12 +185,12 @@ def get_candidates_mp(args):
     # use multi-processing to get candidate summaries
     start = time()
     print('start getting candidates with multi-processing !!!')
-    
+
     with mp.Pool() as pool:
         list(pool.imap_unordered(get_candidates(tokenizer, cls, sep_id), range(n_files), chunksize=64))
-    
+
     print('finished in {}'.format(timedelta(seconds=time()-start)))
-    
+
     # write processed data
     print('start writing {} files'.format(n_files))
     for i in range(n_files):
@@ -198,11 +198,11 @@ def get_candidates_mp(args):
             data = json.loads(f.read())
         with open(args.write_path, 'a') as f:
             print(json.dumps(data), file=f)
-    
+
     os.system('rm -r {}'.format(temp_path))
 
 if __name__ == '__main__':
-    
+
     parser = argparse.ArgumentParser(
         description='Process truncated documents to obtain candidate summaries'
     )

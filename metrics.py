@@ -1,3 +1,4 @@
+import os
 import numpy as np
 
 import json
@@ -17,10 +18,10 @@ from rouge import Rouge
 from fastNLP.core.losses import LossBase
 from fastNLP.core.metrics import MetricBase
 
-_ROUGE_PATH = '/path/to/RELEASE-1.5.5'
+_ROUGE_PATH = os.environ['ROUGE_PATH']
 
-class MarginRankingLoss(LossBase):      
-    
+class MarginRankingLoss(LossBase):
+
     def __init__(self, margin, score=None, summary_score=None):
         super(MarginRankingLoss, self).__init__()
         self._init_param_map(score=score, summary_score=summary_score)
@@ -28,7 +29,7 @@ class MarginRankingLoss(LossBase):
         self.loss_func = torch.nn.MarginRankingLoss(margin)
 
     def get_loss(self, score, summary_score):
-        
+
         # equivalent to initializing TotalLoss to 0
         # here is to avoid that some special samples will not go into the following for loop
         ones = torch.ones(score.size()).cuda(score.device)
@@ -54,27 +55,27 @@ class MarginRankingLoss(LossBase):
         ones = torch.ones(pos_score.size()).cuda(score.device)
         loss_func = torch.nn.MarginRankingLoss(0.0)
         TotalLoss += loss_func(pos_score, neg_score, ones)
-        
+
         return TotalLoss
 
 class ValidMetric(MetricBase):
     def __init__(self, save_path, data, score=None):
         super(ValidMetric, self).__init__()
         self._init_param_map(score=score)
- 
+
         self.save_path = save_path
         self.data = data
 
         self.top1_correct = 0
         self.top6_correct = 0
         self.top10_correct = 0
-         
+
         self.rouge = Rouge()
         self.ROUGE = 0.0
         self.Error = 0
 
         self.cur_idx = 0
-    
+
     # an approximate method of calculating ROUGE
     def fast_rouge(self, dec, ref):
         if dec == '' or ref == '':
@@ -110,7 +111,7 @@ class ValidMetric(MetricBase):
         top6_accuracy = self.top6_correct / self.cur_idx
         top10_accuracy = self.top10_correct / self.cur_idx
         ROUGE = self.ROUGE / self.cur_idx
-        eval_result = {'top1_accuracy': top1_accuracy, 'top6_accuracy': top6_accuracy, 
+        eval_result = {'top1_accuracy': top1_accuracy, 'top6_accuracy': top6_accuracy,
                        'top10_accuracy': top10_accuracy, 'Error': self.Error, 'ROUGE': ROUGE}
         with open(join(self.save_path, 'train_info.txt'), 'a') as f:
             print('top1_accuracy = {}, top6_accuracy = {}, top10_accuracy = {}, Error = {}, ROUGE = {}'.format(
@@ -123,7 +124,7 @@ class ValidMetric(MetricBase):
             self.Error = 0
             self.cur_idx = 0
         return eval_result
-        
+
 class MatchRougeMetric(MetricBase):
     def __init__(self, data, dec_path, ref_path, n_total, score=None):
         super(MatchRougeMetric, self).__init__()
@@ -136,7 +137,7 @@ class MatchRougeMetric(MetricBase):
         self.ext = []
         self.start = time()
 
-    
+
     def evaluate(self, score):
         ext = int(torch.max(score, dim=1).indices) # batch_size = 1
         self.ext.append(ext)
@@ -144,14 +145,14 @@ class MatchRougeMetric(MetricBase):
         print('{}/{} ({:.2f}%) decoded in {} seconds\r'.format(
               self.cur_idx, self.n_total, self.cur_idx/self.n_total*100, timedelta(seconds=int(time()-self.start))
              ), end='')
-    
+
     def get_metric(self, reset=True):
-        
+
         print('\nStart writing files !!!')
         for i, ext in enumerate(self.ext):
             sent_ids = self.data[i]['indices'][ext]
             dec, ref = [], []
-            
+
             for j in sent_ids:
                 dec.append(self.data[i]['text'][j])
             for sent in self.data[i]['summary']:
@@ -163,7 +164,7 @@ class MatchRougeMetric(MetricBase):
             with open(join(self.ref_path, '{}.ref'.format(i)), 'w') as f:
                 for sent in ref:
                     print(sent, file=f)
-        
+
         print('Start evaluating ROUGE score !!!')
         R_1, R_2, R_L = MatchRougeMetric.eval_rouge(self.dec_path, self.ref_path)
         eval_result = {'ROUGE-1': R_1, 'ROUGE-2': R_2, 'ROUGE-L':R_L}
@@ -174,7 +175,7 @@ class MatchRougeMetric(MetricBase):
             self.data = []
             self.start = time()
         return eval_result
-        
+
     @staticmethod
     def eval_rouge(dec_dir, ref_dir, Print=True):
         assert _ROUGE_PATH is not None
@@ -206,4 +207,3 @@ class MatchRougeMetric(MetricBase):
             with open(rouge_path, 'w') as f:
                 print(output, file=f)
         return R_1, R_2, R_L
-    
