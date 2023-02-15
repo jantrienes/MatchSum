@@ -20,7 +20,7 @@ from transformers import BertTokenizer, RobertaTokenizer
 MAX_LEN = 512
 
 _ROUGE_PATH = os.environ['ROUGE_PATH']
-temp_path = './temp' # path to store some temporary files
+temp_path = './matchsum-temp' # path to store some temporary files
 
 original_data, sent_ids = [], []
 
@@ -66,7 +66,7 @@ def get_rouge(path, dec):
     return (rouge1 + rouge2 + rougel) / 3
 
 @curry
-def get_candidates(tokenizer, cls, sep_id, idx):
+def get_candidates(args, tokenizer, cls, sep_id, idx):
 
     idx_path = join(temp_path, str(idx))
 
@@ -91,8 +91,8 @@ def get_candidates(tokenizer, cls, sep_id, idx):
     # then select any 2 or 3 sentences to form a candidate summary, so there are C(5,2)+C(5,3)=20 candidate summaries.
     # if you want to process other datasets, you may need to adjust these numbers according to specific situation.
     sent_id = sent_ids[idx]['sent_id'][:5]
-    indices = list(combinations(sent_id, 2))
-    indices += list(combinations(sent_id, 3))
+    indices = list(combinations(sent_id, args.min_length))
+    indices += list(combinations(sent_id, args.max_length))
     if len(sent_id) < 2:
         indices = [sent_id]
 
@@ -187,7 +187,7 @@ def get_candidates_mp(args):
     print('start getting candidates with multi-processing !!!')
 
     with mp.Pool() as pool:
-        list(pool.imap_unordered(get_candidates(tokenizer, cls, sep_id), range(n_files), chunksize=64))
+        list(pool.imap_unordered(get_candidates(args, tokenizer, cls, sep_id), range(n_files), chunksize=64))
 
     print('finished in {}'.format(timedelta(seconds=time()-start)))
 
@@ -214,6 +214,10 @@ if __name__ == '__main__':
         help='indices of the remaining sentences of the truncated document')
     parser.add_argument('--write_path', type=str, required=True,
         help='path to store the processed dataset')
+    parser.add_argument('--min_length', type=int, required=False, default=2,
+        help='Minimum candidate length in sentences.')
+    parser.add_argument('--max_length', type=int, required=False, default=3,
+        help='Maximum candidate length in sentences.')
 
     args = parser.parse_args()
     assert args.tokenizer in ['bert', 'roberta']
